@@ -7,25 +7,36 @@
 
 # creation du fichier log
 
-dtoday=`date -dtoday +%d-%m-%Y-%Hh%M`
-dfile=anomaly-diagnostic-file-$dtoday.adf
+dToday=`date -dtoday +%d-%m-%Y-%Hh%M`
+dFile=anomaly-diagnostic-file-$dToday.adf
+dNonExpectedFiles=non-expected-files-$dToday.adf
 
-touch dfile
+touch dFile
 
 echo "-------------------------- Anomaly Diagnostic File : $dtoday --------------------------" >> dfile
+
+
 
 # detection des anomalies
 
 printf "Detection des anomalies, cela peut prendre quelques temps..."
 
-for i in `find -maxdepth 1 -type d` # on parcourt tous les dossiers client
+# for i in `find -maxdepth 1 -type d` 
+find . -maxdepth 1 -type d -print0 | while IFS= read -r -d $'\0' line;
+# on parcourt tous les dossiers client
 do
 	printf "Verification du dossier client $i..."
 	#numberOfNonExpectedFolders= find -mindepth 1 -maxdepth 1 -type d -print | grep -v -E 'PAIES|LDM CLARTEO|Millesimes|^2[0-9]{3}(03|12)?$' | wc -l)
-	numberOfNonExpectedFiles=$(find -mindepth 1 -maxdepth 1 -type f -print) 
-	if [ numberOfNonExpectedFiles -gt 0 ]
+	
+	echo 
+	find $line -mindepth 1 -maxdepth 1 -type f > tmp.adf
+	numberOfNonExpectedFiles=$(wc -l tmp.adf | cut -d" " -f1)
+
+	if [ $numberOfNonExpectedFiles -gt 0 ]
 		then
-			echo "Un fichier se trouve à la racine d’un dossier client : ." >> dfile
+			echo "Des fichiers se trouvent à la racine du dossier client $line : ." >> dFile
+			tmp.adf >> dFile
+	fi
 
 		printf "Verification du sous dossier $i..."
 		repertoirCourantJ=$(basename `pwd`)
@@ -37,6 +48,7 @@ do
 		for k in {1..$profondeur}
 		do
 			find -mindepth $k -maxdepth $k -type d -print | grep -E '^(./)?(26|27|84|87){1}[0-9]{4}$|^(./)?(28|88){1}[0-9]{4}(A|B|C){1}$' | sort > tmp.adf
+			#on cherche un dossier client valide
 			nbsub=$(wc -l tmp.adf | cut -d" " -f1)
 			#sub est un "ensemble" de dossier, je ne peux pas faire un wc sur cette variable
 
@@ -49,7 +61,7 @@ do
 					da=$(ls -ld --full-time $l | awk '{print $8}')
 					da=`date -d $da +%d/%m/%Y`
 					heure=$(ls -ld $l | awk '{print $10}')
-					echo "Un dossier client se trouve dans un autre dossier client : `pwd`/$l - dossier cree par $nom le $da a $heure" >> dfile 
+					echo "Un dossier client se trouve dans un autre dossier client : `pwd`/$l - dossier cree par $nom le $da a $heure" >> dFile 
 				done
 			fi
 	done
