@@ -3,6 +3,10 @@
 # Created: Apr. 03, 2018
 # Author: Nabil LAMRABET
 
+# ----------------------- suppression des dossiers vides -----------------------
+
+# rmdir * 2> /dev/null || true
+
 # -------------------------- creation du fichier log ---------------------------
 
 dateOfTheDay=`date -dtoday +%d-%m-%Y-%Hh%M`
@@ -12,8 +16,7 @@ tmp=tmp.txt
 touch diagnosticFile
 touch tmp
 
-echo "-------------------------- Anomaly Diagnostic File : $dateOfTheDay ------------\
---------------" >> dfile
+echo "---------------- Anomaly Diagnostic File : $dateOfTheDay ----------------" >> dfile
 
 # -------------------------- detection des anomalies ---------------------------
 
@@ -33,22 +36,16 @@ do
 	# On compte le nombre de fichiers anormaux,
 	# s'il y en a au moins un on affiche un message d'erreur
 	# dans notre fichier de diagnostique.
-	numberOfNonExpectedFiles=$(wc -l tmp.adf | cut -d" " -f1)
+	numberOfNonExpectedFiles=$(wc -l tmp.txt | cut -d" " -f1)
 	if [ $numberOfNonExpectedFiles -gt 0 ]
 	then
 		printf "Des fichiers anormaux ont été trouvés."
 		printf "Ecriture des fichiers anormaux dans le fichier de diagnostique."
 		echo "Des fichiers se trouvent à la racine du dossier client $clientDirectory : ." >> $diagnosticFile
-		echo $tmp >> $diagnosticFile
+		cat $tmp >> $diagnosticFile
 	fi
 
 	printf "Recherche de dossiers anormaux..."
-
-	clientDirectoryPath=`readlink -f $clientDirectory`
-	clientDirectoryName=`basename $clientDirectoryPath`
-	profondeur=$(echo $clientDirectoryPath | grep -o "/" | wc -l) # profondeur
-	profondeur=$(($profondeur+1))
-	racine=5 # a changer
 
 	for i in `find $clientDirectory -maxdepth 1 -type d -print grep -v -E 'PAIES|LDM CLARTEO|^2[0-9]{3}(03|12)?$'`
 	do
@@ -98,11 +95,6 @@ do
 
 			# et on ajoute le nom du dossier à la liste des dossiers anormaux.
 			echo `basename $currentClientDirectory` >> abnormalDirectoriesNameFile
-
-	#	v1=`head -$count abnormalDirectoriesNameFile  | tail -1 | cut -d' ' -f1`
-	#	v2=$(($v1+1))
-	#	vtext=`head -$count abnormalDirectoriesNameFile  | tail -1 | cut -d' ' -f2`
-	#	sed -i '/$v1/ c\$v2 vtext' file.txt
 	done
 done
 
@@ -134,7 +126,7 @@ done
 	grep ^1 directoriesOccurrencesFile | cut -d' ' -f2 > singleOccurrenceDirectoriesFile
 
 	# correctSingleClientDirectoryFile : contient les dossiers clients valides mais qui ont
-	# localisation anormale
+	# une localisation anormale
 	# 1 260004
 	# 1 260006
 	# 1 74
@@ -151,12 +143,48 @@ done
 		grep $k abnormalDirectoriesNameFile >> multipleDirectoriesPathFile
 	done
 
-	for l in `cat correctSingleClientDirectoryFile | cut -d' ' -f2`
+	for l in `cat correctSingleClientDirectoryFile`
 	do
 		grep $l abnormalDirectoriesNameFile >> correctSingleClientDirectoryPathFile
 	done
 
-	for m in `cat nonCorrectSingleClientDirectoryFile | cut -d' ' -f2`
+	for m in `cat nonCorrectSingleClientDirectoryFile`
 	do
 		grep $m abnormalDirectoriesNameFile >> nonCorrectSingleClientDirectoryPathFile
 	done
+
+
+for n in `cat correctSingleClientDirectoryPathFile`
+do
+	if [ `find $n -maxdepth 1 | \
+	grep -v -E '^(./)?(26|27|84|87){1}[0-9]{4}$|^(./)?(28|88){1}[0-9]{4}(A|B|C){1}$' | \
+	 wc -l` -eq 0 ]
+	then
+		cat $n >> clientDirectoryWithJustWrongLocation
+done
+
+echo "Dossiers ayant plusieurs occurrences :"
+cat multipleDirectoriesPathFile >> $diagnosticFile
+
+echo "Dossiers avec nom invalide ayant une seule occurrence :"
+cat nonCorrectSingleClientDirectoryPathFile >> $diagnosticFile
+
+echo "Dossiers avec nom valide ayant une seule occurrence :"
+cat correctSingleClientDirectoryPathFile >> $diagnosticFile
+
+echo "Dossiers avec nom valide, ayant une seule occurrence,
+\ ne comportant pas de dossiers anormaux :"
+cat clientDirectoryWithJustWrongLocation >> $diagnosticFile
+
+
+cat multipleDirectoriesPathFile nonCorrectSingleClientDirectoryPathFile correctSingleClientDirectoryPathFile clientDirectoryWithJustWrongLocation tmp >> diag2
+
+for o in `cat d2`
+do
+	nom=$(ls -ld --full-time $l | awk '{print $3}')
+	da=$(ls -ld --full-time $l | awk '{print $8}')
+	da=`date -d $da +%d/%m/%Y`
+	heure=$(ls -ld $l | awk '{print $10}')
+
+	echo "$o crée par $nom le $da a $heure" >> d3
+done
