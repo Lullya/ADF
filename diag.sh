@@ -9,182 +9,232 @@
 
 # -------------------------- creation du fichier log ---------------------------
 
+format()
+{
+	FILE_TO_FORMAT=$1
+	FILE_WITH_DATA=$2
+	FILE_TO_WRITE=$3
+	while IFS= read -r o;
+	do
+		nom=$(ls -ld --full-time "${o}" | awk '{print $3}')
+		da=$(ls -ld --full-time "${o}" | awk '{print $6}')
+		da=`date -d $da +%d/%m/%Y`
+		heure=$(ls -ld "${o}" | awk '{print $8}')
+
+		echo "$o | $nom | $da | $heure" >> $FILE_WITH_DATA
+	done < "$FILE_TO_FORMAT"
+
+	column -t $FILE_WITH_DATA -s'|' >> $FILE_TO_WRITE
+	rm -r $FILE_WITH_DATA
+}
+
 dateOfTheDay=`date -dtoday +%d-%m-%Y-%Hh%M`
-diagnosticFile=anomaly-diagnostic-file-$dateOfTheDay.txt
-tmp=tmp.txt
+diagnosticFile=anomaly-diagnostic-file-$dateOfTheDay
 
-touch diagnosticFile
-touch tmp
+touch $diagnosticFile
 
-echo "---------------- Anomaly Diagnostic File : $dateOfTheDay ----------------" >> dfile
+echo "---------------- Anomaly Diagnostic File : $dateOfTheDay ----------------" >> $diagnosticFile
+
+> tmpFilesP.adfp
+> tmpDirectoriesP.adfp
+> directoriesOccurrencesN.adfp
+> multipleOccurrencesDirectoriesN.adfp
+> multipleDirectoriesP.adfp
+
+
+> singleOccurrenceDirectoriesN.adfp
+
+> noncorrectSingleClientDirectoryN.adfp
+> noncorrectSingleClientDirectoryP.adfp
+
+> correctSingleClientDirectoryN.adfp
+> correctSingleClientDirectoryP.adfp
+
+> correctSingleClientDirectoryWithContentP.adfp
+> correctSingleClientDirectoryWithNoContentP.adfp
+
+
+>filesP.adfp
+>directoriesP.adfp
+
+>abnormalDirectoriesP.adfp
+>abnormalDirectoriesN.adfp
 
 # -------------------------- detection des anomalies ---------------------------
-
-printf "Detection des anomalies, cela peut prendre quelques temps..."
+printf "Detection des anomalies, cela peut prendre quelques temps\n"
 
 # On parcourt tous les dossiers clients.
-find . -maxdepth 1 -type d -print0 | while IFS= read -r -d $'\0' clientDirectory;
+#find . -mindepth 1 -maxdepth 1 -type d -print0 | while IFS= read -r -d $'\0' clientDirectory;
+find . -maxdepth 1 -mindepth 1 -type d -print0 | while IFS= read -r -d '' -r clientDirectory;
 do
-	printf "Verification du dossier client $clientDirectory..."
-
-	printf "Recherche de fichiers anormaux à la racine..."
 
 	# On écrit dans un fichier temporaire la liste des fichiers anormaux
 	# (se trouvant à la racine d'un dossier client).
-	find $clientDirectory -maxdepth 1 -type f >> $tmp
+	find "${clientDirectory}" -mindepth 1 -maxdepth 1 -type f > tmpFilesP.adfp
 
-	# On compte le nombre de fichiers anormaux,
-	# s'il y en a au moins un on affiche un message d'erreur
-	# dans notre fichier de diagnostique.
-	numberOfNonExpectedFiles=$(wc -l tmp.txt | cut -d" " -f1)
+	# On écrit dans un fichier temporaire la liste des dossiers anormaux
+	# (se trouvant à la racine d'un dossier client).
+	# On considère qu'il s'agit de tout autre dossier que PAIES, LDM CLARTEO,
+	# une année (ex : 2016) ou une année-mois (ex : 201612).
+	find "${clientDirectory}" -mindepth 1 -type d | grep -v -E 'PAIES|LDM CLARTEO|20[0-9]{2}((0|1){1}[0-9]{1})?$' > tmpDirectoriesP.adfp
+
+	# On compte le nombre de fichiers anormaux.
+	numberOfNonExpectedFiles=$(wc -l tmpFilesP.adfp | cut -d" " -f1)
+
+	# Pareil on compte le nombre de dossiers anormaux.
+	numberOfNonExpectedDirectories=$(wc -l tmpDirectoriesP.adfp | cut -d" " -f1)
+
+	# S'il y a au moins un fichier on affiche un message d'erreur dans un fichier filesP.adfp.
+	# On fait pareil pour les dossiers anormaux.
+	# Cette condition sert uniquement à ne pas créer de message d'erreur si le dossier client est sain.
+
 	if [ $numberOfNonExpectedFiles -gt 0 ]
 	then
-		printf "Des fichiers anormaux ont été trouvés."
-		printf "Ecriture des fichiers anormaux dans le fichier de diagnostique."
-		echo "Des fichiers se trouvent à la racine du dossier client $clientDirectory : ." >> $diagnosticFile
-		cat $tmp >> $diagnosticFile
+		printf "\t Des fichiers anormaux ont été trouvés dans le dossier client $clientDirectory\n"
+		printf "\n------------------------- racine du dossier client $clientDirectory :\n" >> filesP.adfp
+		format tmpFilesP.adfp tmpFilesP2.adfp filesP.adfp
 	fi
 
-	printf "Recherche de dossiers anormaux..."
+	if [ $numberOfNonExpectedDirectories -gt 0 ]
+	then
+		printf "\t Des dossiers anormaux ont été trouvés dans le dossier client $clientDirectory\n"
+		printf "\n------------------------- dossier client $clientDirectory :\n" >> directoriesP.adfp
+		format tmpDirectoriesP.adfp tmpDirectoriesP2.adfp directoriesP.adfp
+	fi
 
-	for i in `find $clientDirectory -maxdepth 1 -type d -print grep -v -E 'PAIES|LDM CLARTEO|^2[0-9]{3}(03|12)?$'`
-	do
-		echo $i >> abnormalDirectoriesPathFile
-		find $i -type d -print | grep -v -E 'PAIES|LDM CLARTEO|^2[0-9]{3}(03|12)?$' >> abnormalDirectoriesPathFile
-	done
+	# On écrit le chemin des fichiers et dossiers anormaux dans 2 autres fichiers
+	# sans écrire aucun message d'erreur afin d'avoir uniquement des chemins d'accès.
+	cat tmpDirectoriesP.adfp >> abnormalDirectoriesP.adfp
 done
 
-printf "Traitement des données..."
-# abnormalDirectoriesPathFile est un fichier comportant la liste
+cat filesP.adfp directoriesP.adfp >> $diagnosticFile
+
+printf "Recherche des dossiers multiples\n"
+
+# abnormalDirectoriesP.adfp est un fichier comportant la liste
 # des chemins d'accès aux dossiers anormaux.
 # numberofAbnormalDirectories est le nombre de dossiers anormaux.
-# abnormalDirectoriesNameFile est la liste des dossiers anormaux
+# abnormalDirectoriesN.adfp est la liste des dossiers anormaux
 # sans leur chemin d'accès.
 
-numberofAbnormalDirectories=$(wc -l abnormalDirectoriesPathFile | cut -d' ' -f1)
+numberofAbnormalDirectories=$(wc -l abnormalDirectoriesP.adfp | cut -d' ' -f1)
 # On parcourt notre fichier comportant la liste des dossiers anormaux.
-for j in numberofAbnormalDirectories
+for j in $(seq 1 $numberofAbnormalDirectories)
 do
-
 	# on extrait du path uniquement le nom des dossiers, exemple :
 	# /a/b/c -> c
-	basename `head -$j abnormalDirectoriesPathFile  | tail -1` >> abnormalDirectoriesNameFile
+	basename "`head -$j abnormalDirectoriesP.adfp  | tail -1`" >> abnormalDirectoriesN.adfp
 done
-
-printf "recherche de dossiers multiples..."
 
 # Pour chaque dossier client,
 find . -maxdepth 1 -type d -print0 | while IFS= read -r -d $'\0' currentClientDirectory;
 do
-	$count=0
+	count=0
 
 	# et pour chaque dossier anormalement localisé,
-	for currentAnormalDirectory in `cat abnormalDirectoriesNameFile`
+	for currentAnormalDirectory in `cat abnormalDirectoriesN.adfp`
 	do
-		$count=$(($count+1))
+		count=$(($count+1))
 
 		# on compare si le dossier client et le dossier anormal portent le même nom,
-		if [ `basename $currentClientDirectory` = $currentAnormalDirectory ]
+		baseCurrentClientDirectory=`basename "$currentClientDirectory"`
+		if [ "$baseCurrentClientDirectory" == "$currentAnormalDirectory" ]
 		then
-			printf "Dossiers multiples trouvés."
-			printf "Ecriture des dossiers multiples dans le fichier de diagnostique."
+			printf "\t Dossiers multiples trouvés $currentClientDirectory \n"
+			if [ `cat abnormalDirectoriesP.adfp | grep -E ^"$currentClientDirectory"$ | wc -l` -eq 0 ]
+			then
+				# dans ce cas on ajoute le chemin d'accès du dossier clients
+				# à la liste des chemins d'accès de dossiers anormaux
+				echo $currentClientDirectory >> abnormalDirectoriesP.adfp
 
-			# dans ce cas on ajoute le chemin d'accès du dossier clients
-			# à la liste des chemins d'accès de dossiers anormaux
-			echo $currentClientDirectory >> abnormalDirectoriesPathFile
-
-			# et on ajoute le nom du dossier à la liste des dossiers anormaux.
-			echo `basename $currentClientDirectory` >> abnormalDirectoriesNameFile
+				# et on ajoute le nom du dossier à la liste des dossiers anormaux.
+				echo `basename $currentClientDirectory` >> abnormalDirectoriesN.adfp
+			fi
+		fi
 	done
 done
 
 # ----------------------------Traitement des données----------------------------
 
-	printf "Traitement des données..."
+printf "\t Traitement des données\n"
 
-	# directoriesOccurrencesFile : contient le nombre d'occurence d'un dossier anormal
-	# dans la GED  : même s'il n'apparaît qu'une seule fois exemple
-	# 2 260001
-	# 4 260003
-	# 1 260004
-	# 1 260006
-	# 1 74
-	sort abnormalDirectoriesNameFile | uniq -cd > directoriesOccurrencesFile
+# directoriesOccurrencesN.adfp : contient le nombre d'occurence d'un dossier anormal
+# dans la GED  : même s'il n'apparaît qu'une seule fois exemple
+# 2 260001
+# 4 260003
+# 1 260004
+# 1 260006
+# 1 74
+sort abnormalDirectoriesN.adfp | uniq -c | sed 's/^ *//' > directoriesOccurrencesN.adfp
+# multipleOccurrencesDirectoriesN.adfp : contient le nombre d'occurence d'un dossier anormal
+# dans la GED uniquement s'il apparaît plusieurs fois exemple  :
+# 2 260001
+# 4 260003
+# 6 260004
+sort abnormalDirectoriesN.adfp | uniq -cd | sed 's/^ *//' > multipleOccurrencesDirectoriesN.adfp
 
-	# multipleOccurrencesDirectoriesFile : contient le nombre d'occurence d'un dossier anormal
-	# dans la GED uniquement s'il apparaît plusieurs fois exemple  :
-	# 2 260001
-	# 4 260003
-	# 6 260004
-	sort abnormalDirectoriesNameFile | uniq -c > multipleOccurrencesDirectoriesFile
+# singleOccurrenceDirectoriesN.adfp : contient le nombre d'occurence d'un dossier anormal
+# dans la GED  : même s'il n'apparaît qu'une seule fois exemple
+# 1 260004
+# 1 260006
+# 1 74
+grep ^1 directoriesOccurrencesN.adfp | cut -d' ' -f2 > singleOccurrenceDirectoriesN.adfp
 
-	# singleOccurrenceDirectoriesFile : contient le nombre d'occurence d'un dossier anormal
-	# dans la GED  : même s'il n'apparaît qu'une seule fois exemple
-	# 1 260004
-	# 1 260006
-	# 1 74
-	grep ^1 directoriesOccurrencesFile | cut -d' ' -f2 > singleOccurrenceDirectoriesFile
+# correctSingleClientDirectoryN.adfp : contient les dossiers clients valides mais qui ont
+# une localisation anormale
+# 1 260004
+# 1 260006
+# 1 74
+grep -E '^(./)?(26|27|84|87){1}[0-9]{4}$|^(./)?(28|88){1}[0-9]{4}(A|B|C){1}$' singleOccurrenceDirectoriesN.adfp > correctSingleClientDirectoryN.adfp
 
-	# correctSingleClientDirectoryFile : contient les dossiers clients valides mais qui ont
-	# une localisation anormale
-	# 1 260004
-	# 1 260006
-	# 1 74
-	grep -E '^(./)?(26|27|84|87){1}[0-9]{4}$|^(./)?(28|88){1}[0-9]{4}(A|B|C){1}$' \
-	singleOccurrenceDirectoriesFile > correctSingleClientDirectoryFile
+# noncorrectSingleClientDirectoryN.adfp : contient les dossiers clients invalides
+# 1 74
+grep -v -E '^(./)?(26|27|84|87){1}[0-9]{4}$|^(./)?(28|88){1}[0-9]{4}(A|B|C){1}$' singleOccurrenceDirectoriesN.adfp > noncorrectSingleClientDirectoryN.adfp
 
-	# nonCorrectSingleClientDirectoryFile : contient les dossiers clients invalides
-	# 1 74
-	grep -v -E '^(./)?(26|27|84|87){1}[0-9]{4}$|^(./)?(28|88){1}[0-9]{4}(A|B|C){1}$' \
-	singleOccurrenceDirectoriesFile > nonCorrectSingleClientDirectoryFile
-
-	for k in `cat multipleOccurrencesDirectoriesFile | cut -d' ' -f2`
-	do
-		grep $k abnormalDirectoriesNameFile >> multipleDirectoriesPathFile
-	done
-
-	for l in `cat correctSingleClientDirectoryFile`
-	do
-		grep $l abnormalDirectoriesNameFile >> correctSingleClientDirectoryPathFile
-	done
-
-	for m in `cat nonCorrectSingleClientDirectoryFile`
-	do
-		grep $m abnormalDirectoriesNameFile >> nonCorrectSingleClientDirectoryPathFile
-	done
-
-
-for n in `cat correctSingleClientDirectoryPathFile`
+for k in `cat multipleOccurrencesDirectoriesN.adfp | cut -d' ' -f2`
 do
-	if [ `find $n -maxdepth 1 | \
-	grep -v -E '^(./)?(26|27|84|87){1}[0-9]{4}$|^(./)?(28|88){1}[0-9]{4}(A|B|C){1}$' | \
-	 wc -l` -eq 0 ]
+	grep "${k}" abnormalDirectoriesP.adfp >> multipleDirectoriesP.adfp
+done
+
+for l in `cat correctSingleClientDirectoryN.adfp`
+do
+	grep "${l}"$ abnormalDirectoriesP.adfp >> correctSingleClientDirectoryP.adfp
+done
+
+for m in `cat noncorrectSingleClientDirectoryN.adfp`
+do
+	grep "${m}" abnormalDirectoriesP.adfp >> noncorrectSingleClientDirectoryP.adfp
+done
+
+
+for n in `cat correctSingleClientDirectoryP.adfp`
+do
+	if [ `find "${n}" -mindepth 1 -maxdepth 1 -type d |	grep -v -E 'PAIES|LDM CLARTEO|20[0-9]{2}((0|1){1}[0-9]{1})?$' | wc -l` -eq 0 ]
 	then
-		cat $n >> clientDirectoryWithJustWrongLocation
+		echo "${n}" >> correctSingleClientDirectoryWithNoContentP.adfp
+	else
+		echo "${n}" >> correctSingleClientDirectoryWithContentP.adfp
+
+	fi
 done
 
-echo "Dossiers ayant plusieurs occurrences :"
-cat multipleDirectoriesPathFile >> $diagnosticFile
+printf "\n------------------------------------------------------------------------\nDossiers ayant plusieurs occurrences :\n" >> $diagnosticFile
+format multipleDirectoriesP.adfp multipleDirectoriesP2.adfp $diagnosticFile
 
-echo "Dossiers avec nom invalide ayant une seule occurrence :"
-cat nonCorrectSingleClientDirectoryPathFile >> $diagnosticFile
+printf "\n------------------------------------------------------------------------\nDossiers avec nom invalide ayant une seule occurrence :\n" >> $diagnosticFile
+format noncorrectSingleClientDirectoryP.adfp noncorrectSingleClientDirectoryP2.adfp $diagnosticFile
 
-echo "Dossiers avec nom valide ayant une seule occurrence :"
-cat correctSingleClientDirectoryPathFile >> $diagnosticFile
+printf "\n------------------------------------------------------------------------\nDossiers avec nom valide ayant une seule occurrence :\n" >> $diagnosticFile
+format correctSingleClientDirectoryWithContentP.adfp correctSingleClientDirectoryWithContentP2.adfp $diagnosticFile
 
-echo "Dossiers avec nom valide, ayant une seule occurrence,
-\ ne comportant pas de dossiers anormaux :"
-cat clientDirectoryWithJustWrongLocation >> $diagnosticFile
+printf "\n------------------------------------------------------------------------\nDossiers avec nom valide, ayant une seule occurrence, ne comportant pas de dossiers anormaux :\n" >> $diagnosticFile
+format correctSingleClientDirectoryWithNoContentP.adfp correctSingleClientDirectoryWithNoContentP2.adfp $diagnosticFile
+
+printf "\n------------------------------------------------------------------------\ndossier à la racine non valide\n" >> $diagnosticFile
+find . -mindepth 1 -maxdepth 1 -type d | grep -v -E '^(./)?(26|27|84|87){1}[0-9]{4}$|^(./)?(28|88){1}[0-9]{4}(A|B|C){1}$' >> badDirectories.adfp
+format badDirectories.adfp badDirectories2.adfp $diagnosticFile
 
 
-cat multipleDirectoriesPathFile nonCorrectSingleClientDirectoryPathFile correctSingleClientDirectoryPathFile clientDirectoryWithJustWrongLocation tmp >> diag2
+rm -r *.adfp
 
-for o in `cat d2`
-do
-	nom=$(ls -ld --full-time $l | awk '{print $3}')
-	da=$(ls -ld --full-time $l | awk '{print $8}')
-	da=`date -d $da +%d/%m/%Y`
-	heure=$(ls -ld $l | awk '{print $10}')
-
-	echo "$o crée par $nom le $da a $heure" >> d3
-done
+printf "Diagnostic des anomalies terminé\n"
