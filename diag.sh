@@ -14,6 +14,8 @@ format()
 	FILE_TO_FORMAT=$1
 	FILE_WITH_DATA=$2
 	FILE_TO_WRITE=$3
+
+	touch $FILE_WITH_DATA
 	while IFS= read -r o;
 	do
 		nom=$(ls -ld --full-time "${o}" | awk '{print $3}')
@@ -70,44 +72,19 @@ do
 
 	# On écrit dans un fichier temporaire la liste des fichiers anormaux
 	# (se trouvant à la racine d'un dossier client).
-	find "${clientDirectory}" -mindepth 1 -maxdepth 1 -type f > tmpFilesP.adfp
+	find "${clientDirectory}" -mindepth 1 -maxdepth 1 -type f >> tmpFilesP.adfp
 
 	# On écrit dans un fichier temporaire la liste des dossiers anormaux
 	# (se trouvant à la racine d'un dossier client).
 	# On considère qu'il s'agit de tout autre dossier que PAIES, LDM CLARTEO,
 	# une année (ex : 2016) ou une année-mois (ex : 201612).
-	find "${clientDirectory}" -mindepth 1 -type d | grep -v -E 'PAIES|LDM CLARTEO|20[0-9]{2}((0|1){1}[0-9]{1})?$' > tmpDirectoriesP.adfp
-
-	# On compte le nombre de fichiers anormaux.
-	numberOfNonExpectedFiles=$(wc -l tmpFilesP.adfp | cut -d" " -f1)
-
-	# Pareil on compte le nombre de dossiers anormaux.
-	numberOfNonExpectedDirectories=$(wc -l tmpDirectoriesP.adfp | cut -d" " -f1)
-
-	# S'il y a au moins un fichier on affiche un message d'erreur dans un fichier filesP.adfp.
-	# On fait pareil pour les dossiers anormaux.
-	# Cette condition sert uniquement à ne pas créer de message d'erreur si le dossier client est sain.
-
-	if [ $numberOfNonExpectedFiles -gt 0 ]
-	then
-		printf "\t Des fichiers anormaux ont été trouvés dans le dossier client $clientDirectory\n"
-		printf "\n------------------------- racine du dossier client $clientDirectory :\n" >> filesP.adfp
-		format tmpFilesP.adfp tmpFilesP2.adfp filesP.adfp
-	fi
-
-	if [ $numberOfNonExpectedDirectories -gt 0 ]
-	then
-		printf "\t Des dossiers anormaux ont été trouvés dans le dossier client $clientDirectory\n"
-		printf "\n------------------------- dossier client $clientDirectory :\n" >> directoriesP.adfp
-		format tmpDirectoriesP.adfp tmpDirectoriesP2.adfp directoriesP.adfp
-	fi
-
-	# On écrit le chemin des fichiers et dossiers anormaux dans 2 autres fichiers
-	# sans écrire aucun message d'erreur afin d'avoir uniquement des chemins d'accès.
-	cat tmpDirectoriesP.adfp >> abnormalDirectoriesP.adfp
+	find "${clientDirectory}" -mindepth 1 -type d | grep -v -E 'PAIES|LDM CLARTEO|20[0-9]{2}((0|1){1}[0-9]{1})?$' >> tmpDirectoriesP.adfp
 done
 
-cat filesP.adfp directoriesP.adfp >> $diagnosticFile
+format tmpFilesP.adfp tmpFilesP2.adfp $diagnosticFile
+cat tmpDirectoriesP.adfp >> abnormalDirectoriesP.adfp
+format tmpDirectoriesP.adfp tmpDirectoriesP2.adfp $diagnosticFile
+
 
 printf "Recherche des dossiers multiples\n"
 
@@ -214,7 +191,6 @@ do
 		echo "${n}" >> correctSingleClientDirectoryWithNoContentP.adfp
 	else
 		echo "${n}" >> correctSingleClientDirectoryWithContentP.adfp
-
 	fi
 done
 
@@ -231,9 +207,10 @@ printf "\n----------------------------------------------------------------------
 format correctSingleClientDirectoryWithNoContentP.adfp correctSingleClientDirectoryWithNoContentP2.adfp $diagnosticFile
 
 printf "\n------------------------------------------------------------------------\ndossier à la racine non valide\n" >> $diagnosticFile
+
+
 find . -mindepth 1 -maxdepth 1 -type d | grep -v -E '^(./)?(26|27|84|87){1}[0-9]{4}$|^(./)?(28|88){1}[0-9]{4}(A|B|C){1}$' >> badDirectories.adfp
 format badDirectories.adfp badDirectories2.adfp $diagnosticFile
-
 
 rm -r *.adfp
 
